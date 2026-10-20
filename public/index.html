@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Live</title>
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #fbfaf7; --card: #ffffff; --line: #e4e1d8; --line2: #efece4;
+  --ink: #1f1e1b; --ink2: #5d5a52; --ink3: #8d897e; --accent: #c2603c; --accent-soft: #f6e6de;
+  --ok: #3f8a5a; --err: #b8402f; --user: #ecebe5; --code: #f1efe9;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a18; --panel: #201f1c; --card: #262522; --line: #34322e; --line2: #2c2a27;
+    --ink: #ebe8e1; --ink2: #b0aca2; --ink3: #7f7b72; --accent: #e07a52; --accent-soft: #3a2a22;
+    --ok: #6bbf87; --err: #e3735f; --user: #2f2d29; --code: #2b2926;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); display: grid; grid-template-columns: 320px 1fr; overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+/* sidebar */
+#side { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+#side header { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line); }
+#side h1 { font-size: 13px; letter-spacing: .02em; margin: 0; display: flex; align-items: center; gap: 8px; color: var(--ink2); font-weight: 600; }
+#conn { width: 8px; height: 8px; border-radius: 50%; background: var(--ink3); }
+#conn.on { background: var(--ok); }
+#q { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--ink); font: inherit; outline: none; }
+#q:focus { border-color: var(--accent); }
+.filters { display: flex; gap: 6px; font-size: 12px; }
+.filters button { padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink2); }
+.filters button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+#list { overflow-y: auto; flex: 1; padding: 6px 0 20px; }
+.proj { margin-top: 6px; }
+.proj > summary { list-style: none; cursor: pointer; padding: 6px 14px; font-size: 12px; color: var(--ink2); display: flex; gap: 6px; align-items: baseline; user-select: none; }
+.proj > summary::-webkit-details-marker { display: none; }
+.proj > summary::before { content: "▸"; font-size: 10px; color: var(--ink3); transition: transform .15s; }
+.proj[open] > summary::before { transform: rotate(90deg); }
+.proj .path { font-family: var(--mono); font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj .count { color: var(--ink3); margin-left: auto; }
+.sess { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; padding: 7px 8px 7px 26px; border-left: 2px solid transparent; cursor: pointer; outline: none; }
+.sess:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.sess .info { flex: 1; min-width: 0; }
+.term { flex: none; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--ink3); opacity: 0; }
+.sess:hover .term, .sess:focus-within .term, .term.running { opacity: 1; }
+.term:hover { background: var(--line); color: var(--ink); }
+.term.running { color: var(--ok); }
+.term svg { width: 15px; height: 15px; }
+.stat { color: var(--ok); }
+.stat.idle { color: var(--accent); }
+.idle-dot { width: 7px; height: 7px; border-radius: 50%; border: 2px solid var(--accent); flex: none; }
+#toast { position: fixed; bottom: 20px; right: 20px; max-width: 380px; background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 8px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.2); opacity: 0; transform: translateY(8px); transition: .2s; pointer-events: none; z-index: 20; }
+#toast.on { opacity: 1; transform: none; }
+#toast.err { background: var(--err); color: #fff; }
+.vhead button.termb { color: var(--ink); border-color: var(--ink3); }
+.sess:hover { background: var(--line2); }
+.sess.open { border-left-color: var(--accent); background: var(--accent-soft); }
+.sess .t { display: flex; gap: 6px; align-items: center; }
+.sess .t span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.sess .sub { font-size: 12px; color: var(--ink3); display: flex; gap: 8px; }
+.live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 15%, transparent); } }
+.empty { padding: 30px 16px; color: var(--ink3); text-align: center; }
+
+/* main area */
+#main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#tabs { display: flex; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--line); overflow-x: auto; background: var(--panel); min-height: 41px; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 6px 8px 7px 12px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; max-width: 240px; color: var(--ink2); font-size: 13px; flex: none; }
+.tab span.n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab.on { background: var(--bg); border-color: var(--line); color: var(--ink); margin-bottom: -1px; }
+.tab .x { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; color: var(--ink3); font-size: 14px; line-height: 1; }
+.tab .x:hover { background: var(--line); color: var(--ink); }
+.tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+#views { flex: 1; position: relative; min-height: 0; }
+.view { position: absolute; inset: 0; overflow-y: auto; display: none; }
+.view.on { display: block; }
+.vhead { position: sticky; top: 0; z-index: 2; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line2); padding: 10px 28px; display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--ink3); }
+.vhead b { color: var(--ink); font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vhead code { font-family: var(--mono); }
+.vhead .sp { flex: 1; }
+.vhead button { border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; color: var(--ink2); }
+.vhead button:hover { color: var(--ink); border-color: var(--ink3); }
+.conv { max-width: 860px; margin: 0 auto; padding: 20px 28px 120px; }
+.welcome { max-width: 520px; margin: 18vh auto; text-align: center; color: var(--ink3); }
+.welcome h2 { color: var(--ink); font-size: 18px; font-weight: 600; }
+
+.msg-user { background: var(--user); border-radius: 12px; padding: 10px 14px; margin: 22px 0 12px; white-space: pre-wrap; word-wrap: break-word; }
+.msg-user .ts, .turn { font-size: 11px; color: var(--ink3); }
+.msg-user .ts { display: block; margin-bottom: 2px; }
+.cmd { font-family: var(--mono); font-size: 13px; background: var(--user); border-radius: 8px; padding: 6px 12px; margin: 22px 0 10px; display: inline-block; }
+.a-text { margin: 8px 0; word-wrap: break-word; }
+.a-text p { margin: 0 0 .7em; }
+.a-text pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font: 12.5px/1.45 var(--mono); }
+.a-text code { font-family: var(--mono); font-size: .92em; background: var(--code); padding: 1px 4px; border-radius: 4px; }
+.a-text pre code { background: none; padding: 0; }
+.a-text h1, .a-text h2, .a-text h3, .a-text h4 { font-size: 15px; margin: 1em 0 .4em; }
+.a-text ul, .a-text ol { margin: 0 0 .7em; padding-left: 1.4em; }
+.a-text table { border-collapse: collapse; margin: 0 0 .8em; font-size: 13px; display: block; overflow-x: auto; }
+.a-text th, .a-text td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+.a-text a { color: var(--accent); }
+.a-text blockquote { margin: 0 0 .7em; padding-left: 10px; border-left: 3px solid var(--line); color: var(--ink2); }
+
+details.tool, details.think, details.note { margin: 4px 0; border: 1px solid var(--line2); border-radius: 8px; background: var(--card); }
+details > summary { list-style: none; cursor: pointer; padding: 5px 10px; font-size: 12.5px; display: flex; gap: 8px; align-items: center; color: var(--ink2); }
+details > summary::-webkit-details-marker { display: none; }
+details.tool > summary .nm { font-weight: 600; color: var(--ink); flex: none; }
+details.tool > summary .arg { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink3); flex: 1; min-width: 0; }
+.st { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ok); }
+.st.run { background: transparent; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; width: 10px; height: 10px; }
+.st.err { background: var(--err); }
+.st.gone { background: var(--ink3); }
+@keyframes spin { to { transform: rotate(360deg); } }
+details .body { border-top: 1px solid var(--line2); padding: 8px 10px; }
+details .body pre { margin: 0 0 6px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; }
+details .body .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink3); margin: 4px 0 2px; }
+details .body .err { color: var(--err); }
+details.think > summary, details.note > summary { color: var(--ink3); font-style: italic; }
+details.note { border-style: dashed; background: transparent; }
+.turn { margin: 6px 0 4px; text-align: right; }
+.cut { font-size: 11px; color: var(--ink3); }
+.skipped { text-align: center; color: var(--ink3); font-size: 12px; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; margin-bottom: 10px; }
+.loading { color: var(--ink3); padding: 40px 0; text-align: center; }
+
+#jump { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 14px; border-radius: 99px; font-size: 12.5px; display: none; z-index: 5; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+#jump.on { display: block; }
+
+@media (max-width: 760px) {
+  body { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
+  #side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .conv { padding: 16px 16px 100px; }
+  .vhead { padding: 10px 16px; }
+}
+</style>
+</head>
+<body>
+<aside id="side">
+  <header>
+    <h1><span id="conn" data-i18n-title="conn"></span><span data-i18n="app">Claude Code Live</span></h1>
+    <input id="q" data-i18n-ph="search" autocomplete="off">
+    <div class="filters">
+      <button data-f="all" class="on" data-i18n="f.all"></button>
+      <button data-f="live" data-i18n="f.live"></button>
+      <button data-f="today" data-i18n="f.today"></button>
+    </div>
+  </header>
+  <div id="list"><div class="empty" data-i18n="loading"></div></div>
+</aside>
+<main id="main">
+  <nav id="tabs"></nav>
+  <div id="views">
+    <div class="view on" id="welcome"><div class="welcome">
+      <h2 data-i18n="welcome.h"></h2>
+      <p data-i18n-html="welcome.p"></p>
+    </div></div>
+    <button id="jump" data-i18n="jump"></button>
+  </div>
+</main>
+
+<div id="toast"></div>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+
+// ---------- i18n (Portuguese if the browser is in Portuguese, English otherwise) ----------
+const LANG = (new URLSearchParams(location.search).get('lang') || navigator.language || 'en').toLowerCase().startsWith('pt') ? 'pt' : 'en';
+const LOCALE = LANG === 'pt' ? 'pt-BR' : undefined;
+const STR = {
+  en: {
+    app: 'Claude Code Live', conn: 'connection to the server', search: 'Search title, folder or prompt…',
+    'f.all': 'All', 'f.live': 'Open now', 'f.today': 'Today', loading: 'Loading…',
+    'welcome.h': 'Pick a session',
+    'welcome.p': 'Sessions from every folder are on the left. Green dot: Claude is working. Orange ring: open in a terminal, waiting for you. The terminal icon takes you there, or reopens it with <code>claude --resume</code>.',
+    jump: 'New messages ↓', now: 'now', busy: 'working', idle: 'waiting for you',
+    nothing: 'Nothing found.', none: 'No sessions found.',
+    'term.go': 'Go to Terminal', 'term.open': 'Open in Terminal',
+    'term.go.title': 'Go to the Terminal tab where it is open', 'term.open.title': 'Open in Terminal (claude --resume)',
+    'term.head.title': 'Go to the session\'s Terminal, or open a new one with claude --resume',
+    'term.new': 'Opening a new Terminal window…', 'term.focus': 'Going to Terminal…', offline: 'Server is offline.',
+    copy: 'Copy command', copied: 'Copied', 'copy.title': 'Copy the command to resume in a terminal',
+    folder: 'folder', close: 'Close', 'open.fail': 'Could not open this session.',
+    thinking: 'Thinking', input: 'Input', result: 'Result', more: n => `… ${n} more characters`,
+    interrupted: 'no result (interrupted)', turn: (d, t) => `turn finished in ${d} · ${t}`,
+    skipped: n => `Long session: showing only the latest messages (${n} older events hidden).`,
+    empty: 'No messages in this session yet.',
+    'note.compacted': 'Context compacted', 'note.compact-summary': 'Compaction summary', 'note.shell-output': 'Shell output',
+    'note.interrupted': 'Interrupted by you', 'note.task-done': 'Background task finished', 'note.peer': 'Message from another agent',
+    'note.auto-continue': 'Automatic continuation', 'note.system': 'System message',
+    'err.not-mac': 'Opening a terminal only works on macOS (Terminal.app) for now.',
+    'err.invalid': 'Invalid session.', 'err.not-found': 'Session not found.',
+    'err.no-tty': 'The session is open, but not in a terminal (maybe in the app or an editor).',
+    'err.other-terminal': 'The session is running, but outside Terminal.app (VS Code, iTerm…).',
+    'err.no-folder': 'The session folder no longer exists:',
+    'err.automation-denied': 'macOS blocked control of Terminal. Allow it in System Settings › Privacy & Security › Automation.',
+    'err.failed': 'Could not open Terminal.',
+  },
+  pt: {
+    app: 'Claude Code Live', conn: 'conexão com o servidor', search: 'Buscar por título, pasta ou prompt…',
+    'f.all': 'Todas', 'f.live': 'Abertas agora', 'f.today': 'Hoje', loading: 'Carregando…',
+    'welcome.h': 'Escolha uma sessão',
+    'welcome.p': 'As sessões de todas as pastas aparecem à esquerda. Bolinha verde: o Claude está trabalhando. Anel laranja: aberta no terminal, esperando você. O ícone de terminal leva você até ela ou reabre com <code>claude --resume</code>.',
+    jump: 'Novas mensagens ↓', now: 'agora', busy: 'trabalhando', idle: 'esperando você',
+    nothing: 'Nada encontrado.', none: 'Nenhuma sessão encontrada.',
+    'term.go': 'Ir para o Terminal', 'term.open': 'Abrir no Terminal',
+    'term.go.title': 'Ir para o Terminal onde ela está aberta', 'term.open.title': 'Abrir no Terminal (claude --resume)',
+    'term.head.title': 'Ir para o Terminal da sessão, ou abrir um novo com claude --resume',
+    'term.new': 'Abrindo nova janela do Terminal…', 'term.focus': 'Indo para o Terminal…', offline: 'Servidor fora do ar.',
+    copy: 'Copiar comando', copied: 'Copiado', 'copy.title': 'Copiar comando para continuar no terminal',
+    folder: 'pasta', close: 'Fechar', 'open.fail': 'Não consegui abrir essa sessão.',
+    thinking: 'Pensamento', input: 'Entrada', result: 'Resultado', more: n => `… mais ${n} caracteres`,
+    interrupted: 'sem resultado (interrompida)', turn: (d, t) => `turno concluído em ${d} · ${t}`,
+    skipped: n => `Sessão longa: mostrando só as últimas mensagens (${n} eventos antigos ocultos).`,
+    empty: 'Sessão ainda sem mensagens.',
+    'note.compacted': 'Contexto compactado', 'note.compact-summary': 'Resumo da compactação', 'note.shell-output': 'Saída do terminal',
+    'note.interrupted': 'Interrompido por você', 'note.task-done': 'Tarefa em segundo plano terminou', 'note.peer': 'Mensagem de outro agente',
+    'note.auto-continue': 'Continuação automática', 'note.system': 'Mensagem do sistema',
+    'err.not-mac': 'Abrir no terminal por enquanto só funciona no macOS (Terminal.app).',
+    'err.invalid': 'Sessão inválida.', 'err.not-found': 'Sessão não encontrada.',
+    'err.no-tty': 'A sessão está aberta, mas não num terminal (talvez no app ou no editor).',
+    'err.other-terminal': 'A sessão está rodando, mas fora do Terminal.app (VS Code, iTerm…).',
+    'err.no-folder': 'A pasta da sessão não existe mais:',
+    'err.automation-denied': 'O macOS bloqueou o controle do Terminal. Libere em Ajustes do Sistema › Privacidade e Segurança › Automação.',
+    'err.failed': 'Não consegui abrir o Terminal.',
+  },
+};
+const T = (k, ...a) => { const v = STR[LANG][k] ?? STR.en[k] ?? k; return typeof v === 'function' ? v(...a) : v; };
+document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
+document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = T(el.dataset.i18n));
+document.querySelectorAll('[data-i18n-html]').forEach(el => el.innerHTML = T(el.dataset.i18nHtml));
+document.querySelectorAll('[data-i18n-ph]').forEach(el => el.placeholder = T(el.dataset.i18nPh));
+document.querySelectorAll('[data-i18n-title]').forEach(el => el.title = T(el.dataset.i18nTitle));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+let connected = false;
+let clientId = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+let sessions = [];
+let filter = 'all';
+const tabs = new Map(); // key -> { key, project, id, view, conv, tools: Map, lastKind, unread }
+let current = null;
+const closedProjects = new Set(store.get('closedProjects', []));
+
+// ---------- helpers ----------
+function shortPath(p) {
+  const m = p.match(/^\/(?:Users|home)\/[^/]+(\/.*)?$/);
+  return m ? '~' + (m[1] || '') : p;
+}
+function ago(ms) {
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return T('now');
+  if (s < 3600) return Math.floor(s / 60) + ' min';
+  if (s < 86400) return Math.floor(s / 3600) + ' h';
+  if (s < 86400 * 7) return Math.floor(s / 86400) + ' d';
+  return new Date(ms).toLocaleDateString(LOCALE, { day: '2-digit', month: 'short' });
+}
+function size(b) { return b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB'; }
+function clock(ts) { return ts ? new Date(ts).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' }) : ''; }
+function sessName(s) { return s.title || s.first || s.lastPrompt || s.id.slice(0, 8); }
+
+// Small, safe Markdown (escapes everything first).
+function md(src) {
+  const blocks = [];
+  src = src.replace(/```[^\n]*\n([\s\S]*?)(```|$)/g, (_, code) => { blocks.push(code); return `\u0000${blocks.length - 1}\u0000`; });
+  const inline = t => esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const out = [];
+  const lines = src.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    let l = lines[i];
+    let m;
+    if ((m = l.match(/^\u0000(\d+)\u0000$/))) { out.push(`<pre><code>${esc(blocks[+m[1]])}</code></pre>`); continue; }
+    if ((m = l.match(/^(#{1,4})\s+(.*)/))) { out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); continue; }
+    if (/^\|.*\|\s*$/.test(l) && /^\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) {
+      const row = (r, tag) => '<tr>' + r.trim().slice(1, -1).split('|').map(c => `<${tag}>${inline(c.trim())}</${tag}>`).join('') + '</tr>';
+      let html = '<table>' + row(l, 'th'); i++;
+      while (i + 1 < lines.length && /^\|.*\|\s*$/.test(lines[i + 1])) html += row(lines[++i], 'td');
+      out.push(html + '</table>'); continue;
+    }
+    if (/^\s*([-*]|\d+\.)\s+/.test(l)) {
+      const ordered = /^\s*\d+\./.test(l);
+      let html = ordered ? '<ol>' : '<ul>';
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) html += `<li>${inline(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ''))}</li>`;
+      i--; out.push(html + (ordered ? '</ol>' : '</ul>')); continue;
+    }
+    if (/^>\s?/.test(l)) { out.push(`<blockquote>${inline(l.replace(/^>\s?/, ''))}</blockquote>`); continue; }
+    if (!l.trim()) { out.push(''); continue; }
+    let para = l;
+    while (i + 1 < lines.length && lines[i + 1].trim() && !/^(#{1,4}\s|\s*([-*]|\d+\.)\s|>|\||\u0000)/.test(lines[i + 1])) para += '\n' + lines[++i];
+    out.push(`<p>${inline(para).replace(/\n/g, '<br>')}</p>`);
+  }
+  return out.join('\n');
+}
+
+function toolArg(name, input) {
+  let o; try { o = JSON.parse(input.text); } catch { return input.text.slice(0, 140); }
+  if (!o || typeof o !== 'object') return '';
+  const v = o.command || o.file_path || o.path || o.pattern || o.description || o.url || o.query || o.prompt || o.skill
+    || Object.values(o).find(x => typeof x === 'string') || '';
+  return String(v).replace(/\s+/g, ' ').replace(/\/(?:Users|home)\/[^/\s]+/g, '~').slice(0, 200);
+}
+
+// ---------- status and Terminal ----------
+const TERM_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M4.5 6.5l2 1.5-2 1.5M8.5 10h3"/></svg>';
+
+function statusDot(s) {
+  if ((s.proc && s.proc.status !== 'idle') || (!s.proc && s.active)) return '<i class="live"></i>';
+  if (s.proc) return '<i class="idle-dot"></i>';
+  return '';
+}
+function statusText(s) {
+  if (!s.proc) return '';
+  return s.proc.status !== 'idle' ? `<span class="stat">${T('busy')}</span>` : `<span class="stat idle">${T('idle')}</span>`;
+}
+
+let toastTimer;
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'on' + (err ? ' err' : '');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', err ? 6000 : 2500);
+}
+
+async function openTerminal(project, id) {
+  try {
+    const r = await fetch('/api/terminal', { method: 'POST', headers: { 'content-type': 'application/json', 'x-app': '1' }, body: JSON.stringify({ project, id }) }).then(r => r.json());
+    if (!r.ok) toast(T('err.' + (r.error || 'failed')) + (r.detail ? ' ' + r.detail : ''), true);
+    else toast(r.action === 'new' ? T('term.new') : T('term.focus'));
+  } catch { toast(T('offline'), true); }
+}
+
+function updateHeadButton(t) {
+  const s = sessions.find(x => x.project === t.project && x.id === t.id);
+  const b = t.view.querySelector('.termb');
+  b.textContent = s?.proc ? T('term.go') : T('term.open');
+}
+
+// ---------- list ----------
+function renderList() {
+  const q = $('#q').value.trim().toLowerCase();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const shown = sessions.filter(s => {
+    if (filter === 'live' && !s.active && !s.proc) return false;
+    if (filter === 'today' && s.mtime < today) return false;
+    if (!q) return true;
+    return [s.title, s.first, s.lastPrompt, s.cwd, s.id].some(x => x && x.toLowerCase().includes(q));
+  });
+  const groups = new Map();
+  for (const s of shown) {
+    if (!groups.has(s.project)) groups.set(s.project, { cwd: s.cwd, items: [] });
+    groups.get(s.project).items.push(s);
+  }
+  if (!shown.length) { $('#list').innerHTML = `<div class="empty">${sessions.length ? T('nothing') : T('none')}</div>`; return; }
+  const scroll = $('#list').scrollTop;
+  $('#list').innerHTML = [...groups].map(([proj, g]) => {
+    const live = g.items.some(s => s.active);
+    const open = q || filter !== 'all' || !closedProjects.has(proj);
+    return `<details class="proj" data-proj="${esc(proj)}" ${open ? 'open' : ''}>
+      <summary><span class="path" title="${esc(g.cwd)}">${esc(shortPath(g.cwd))}</span>${live ? '<i class="live"></i>' : ''}<span class="count">${g.items.length}</span></summary>
+      ${g.items.map(s => `<div class="sess ${tabs.has(s.project + '/' + s.id) ? 'open' : ''}" role="button" tabindex="0" data-key="${esc(s.project + '/' + s.id)}" title="${esc(sessName(s))}">
+        <div class="info">
+          <div class="t">${statusDot(s)}<span>${esc(sessName(s))}</span></div>
+          <div class="sub">${statusText(s)}<span>${ago(s.mtime)}</span><span>${size(s.size)}</span></div>
+        </div>
+        <button class="term ${s.proc ? 'running' : ''}" title="${s.proc ? T('term.go.title') : T('term.open.title')}">${TERM_ICON}</button>
+      </div>`).join('')}
+    </details>`;
+  }).join('');
+  $('#list').scrollTop = scroll;
+}
+
+$('#list').addEventListener('click', e => {
+  const b = e.target.closest('.sess'); if (!b) return;
+  const [project, id] = b.dataset.key.split('/');
+  if (e.target.closest('.term')) openTerminal(project, id); else openTab(project, id);
+});
+$('#list').addEventListener('keydown', e => {
+  const b = e.target.closest('.sess');
+  if (b && e.target === b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); b.click(); }
+});
+$('#list').addEventListener('toggle', e => {
+  const d = e.target.closest?.('.proj');
+  if (!d || $('#q').value || filter !== 'all') return;
+  d.open ? closedProjects.delete(d.dataset.proj) : closedProjects.add(d.dataset.proj);
+  store.set('closedProjects', [...closedProjects]);
+}, true);
+$('#q').addEventListener('input', renderList);
+document.querySelectorAll('.filters button').forEach(b => b.onclick = () => {
+  filter = b.dataset.f;
+  document.querySelectorAll('.filters button').forEach(x => x.classList.toggle('on', x === b));
+  renderList();
+});
+
+// ---------- tabs ----------
+function saveTabs() { store.set('tabs', { open: [...tabs.keys()], current }); }
+
+function renderTabs() {
+  $('#tabs').innerHTML = [...tabs.values()].map(t => {
+    const s = sessions.find(x => x.project === t.project && x.id === t.id);
+    const name = t.title || (s ? sessName(s) : t.id.slice(0, 8));
+    return `<div class="tab ${t.key === current ? 'on' : ''}" data-key="${esc(t.key)}" title="${esc(name)}">
+      ${t.unread ? '<i class="dot"></i>' : ''}<span class="n">${esc(name)}</span><button class="x" title="${T('close')}">×</button></div>`;
+  }).join('');
+}
+
+$('#tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.tab'); if (!tab) return;
+  if (e.target.closest('.x')) closeTab(tab.dataset.key); else show(tab.dataset.key);
+});
+$('#tabs').addEventListener('auxclick', e => { const tab = e.target.closest('.tab'); if (tab && e.button === 1) closeTab(tab.dataset.key); });
+
+async function openTab(project, id, focus = true) {
+  const key = project + '/' + id;
+  if (!tabs.has(key)) {
+    const view = document.createElement('div');
+    view.className = 'view';
+    const s = sessions.find(x => x.key === key || (x.project === project && x.id === id));
+    view.innerHTML = `<div class="vhead"><b class="vt"></b><code class="vp" title="${T('folder')}">${esc(shortPath(s?.cwd || project))}</code><span class="sp"></span>
+      <button class="copy" title="${T('copy.title')}">${T('copy')}</button>
+      <button class="termb" title="${T('term.head.title')}">${T('term.open')}</button></div>
+      <div class="conv"><div class="loading">${T('loading')}</div></div>`;
+    view.querySelector('.copy').onclick = e => {
+      const cwd = sessions.find(x => x.project === project && x.id === id)?.cwd || '.';
+      const cmd = `cd ${JSON.stringify(cwd)} && claude --resume ${id}`;
+      navigator.clipboard?.writeText(cmd).then(() => { e.target.textContent = T('copied'); setTimeout(() => e.target.textContent = T('copy'), 1500); });
+    };
+    view.querySelector('.termb').onclick = () => openTerminal(project, id);
+    view.addEventListener('scroll', () => { if (current === key && atBottom(view)) $('#jump').classList.remove('on'); });
+    $('#views').insertBefore(view, $('#jump'));
+    const t = { key, project, id, view, conv: view.querySelector('.conv'), tools: new Map(), lastKind: null, title: s?.title || '', unread: false, loaded: false };
+    tabs.set(key, t);
+    setHeadTitle(t, s ? sessName(s) : id);
+    updateHeadButton(t);
+    subscribe(t);
+  }
+  if (focus) show(key);
+  saveTabs(); renderTabs(); renderList();
+}
+
+function subscribe(t) {
+  if (!connected) return; // on connect, every tab subscribes
+  fetch('/api/subscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client: clientId, project: t.project, id: t.id }) })
+    .then(r => r.json()).then(r => { if (!r.ok && tabs.get(t.key) === t) t.conv.innerHTML = `<div class="loading">${T('open.fail')}</div>`; })
+    .catch(() => {});
+}
+
+function closeTab(key) {
+  const t = tabs.get(key); if (!t) return;
+  fetch('/api/unsubscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client: clientId, project: t.project, id: t.id }) }).catch(() => {});
+  t.view.remove(); tabs.delete(key);
+  if (current === key) { const keys = [...tabs.keys()]; current = null; show(keys[keys.length - 1] || null); }
+  saveTabs(); renderTabs(); renderList();
+}
+
+function show(key) {
+  current = key;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('on'));
+  $('#jump').classList.remove('on');
+  if (!key) { $('#welcome').classList.add('on'); saveTabs(); renderTabs(); return; }
+  const t = tabs.get(key);
+  t.view.classList.add('on'); t.unread = false;
+  if (t.scrollEnd) { t.view.scrollTop = t.view.scrollHeight; t.scrollEnd = false; }
+  saveTabs(); renderTabs();
+}
+
+function setHeadTitle(t, name) { t.view.querySelector('.vt').textContent = name; }
+
+// ---------- conversation rendering ----------
+const atBottom = v => v.scrollHeight - v.scrollTop - v.clientHeight < 80;
+
+function addEvents(t, events, fresh) {
+  const v = t.view;
+  const stick = !fresh || atBottom(v);
+  const frag = document.createDocumentFragment();
+  for (const ev of events) {
+    const el = renderEvent(t, ev);
+    if (el) frag.appendChild(el);
+  }
+  t.conv.appendChild(frag);
+  const hidden = v.offsetParent === null; // hidden tab has no height: scroll when shown
+  if (!fresh) { hidden ? (t.scrollEnd = true) : (v.scrollTop = v.scrollHeight); return; }
+  if (!events.some(e => e.k !== 'title')) return;
+  if (hidden) t.scrollEnd = true;
+  else if (stick) v.scrollTop = v.scrollHeight;
+  else if (current === t.key) $('#jump').classList.add('on');
+  if (current !== t.key) { t.unread = true; renderTabs(); }
+}
+
+function renderEvent(t, ev) {
+  const div = (cls, html) => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; return d; };
+  switch (ev.k) {
+    case 'title':
+      if (t.title === ev.text) return null;
+      t.title = ev.text; setHeadTitle(t, ev.text); renderTabs(); return null;
+    case 'user':
+      stopPending(t);
+      return div('msg-user', `<span class="ts">${clock(ev.ts)}</span>${esc(ev.text)}`);
+    case 'cmd':
+      stopPending(t);
+      return div('cmd', esc(ev.text));
+    case 'a-text':
+      return div('a-text', md(ev.text));
+    case 'a-think': {
+      const d = document.createElement('details'); d.className = 'think';
+      d.innerHTML = `<summary>${T('thinking')}</summary><div class="body"><pre>${esc(ev.text)}</pre></div>`; return d;
+    }
+    case 'tool': {
+      const d = document.createElement('details'); d.className = 'tool';
+      d.innerHTML = `<summary><i class="st run"></i><span class="nm">${esc(toolName(ev.name))}</span><span class="arg">${esc(toolArg(ev.name, ev.input))}</span></summary>
+        <div class="body"><div class="lbl">${T('input')}</div><pre>${esc(ev.input.text)}</pre>${ev.input.cut ? `<div class="cut">${T('more', ev.input.cut)}</div>` : ''}<div class="res"></div></div>`;
+      t.tools.set(ev.id, d);
+      const pending = t.pendingResults?.get(ev.id);
+      if (pending) { t.pendingResults.delete(ev.id); fillResult(d, pending); }
+      return d;
+    }
+    case 'result': {
+      const d = t.tools.get(ev.id);
+      if (d) fillResult(d, ev);
+      else (t.pendingResults ||= new Map()).set(ev.id, ev);
+      return null;
+    }
+    case 'note': {
+      if (!ev.body) return div('turn', esc(T('note.' + ev.label)));
+      const d = document.createElement('details'); d.className = 'note';
+      d.innerHTML = `<summary>${esc(T('note.' + ev.label))} · ${clock(ev.ts)}</summary><div class="body"><pre>${esc(ev.body)}</pre></div>`; return d;
+    }
+    case 'turn':
+      return div('turn', T('turn', fmtDur(ev.ms), clock(ev.ts)));
+  }
+  return null;
+}
+
+// A tool still without a result when you send a new message was interrupted.
+function stopPending(t) {
+  t.conv.querySelectorAll('.st.run').forEach(st => { st.className = 'st gone'; st.title = T('interrupted'); });
+}
+function toolName(n) {
+  const m = n.match(/^mcp__(.+?)__(.+)$/);
+  return m ? `${m[1].replace(/^claude_ai_/, '')} · ${m[2]}` : n;
+}
+
+function fillResult(d, ev) {
+  const st = d.querySelector('.st');
+  st.className = 'st' + (ev.err ? ' err' : '');
+  d.querySelector('.res').innerHTML = `<div class="lbl">${T('result')}</div><pre class="${ev.err ? 'err' : ''}">${esc(ev.out.text)}</pre>${ev.out.cut ? `<div class="cut">${T('more', ev.out.cut)}</div>` : ''}`;
+}
+
+function fmtDur(ms) {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+}
+
+$('#jump').onclick = () => { const t = tabs.get(current); if (t) t.view.scrollTop = t.view.scrollHeight; $('#jump').classList.remove('on'); };
+
+// ---------- connection ----------
+function connect() {
+  const es = new EventSource('/api/stream?client=' + clientId);
+  es.onopen = () => {
+    connected = true;
+    $('#conn').classList.add('on');
+    // Reconnect: reload every tab from scratch.
+    for (const t of tabs.values()) { t.conv.innerHTML = `<div class="loading">${T('loading')}</div>`; t.tools.clear(); t.pendingResults?.clear(); t.loaded = false; subscribe(t); }
+  };
+  es.onerror = () => { connected = false; $('#conn').classList.remove('on'); };
+  es.addEventListener('list', e => {
+    sessions = JSON.parse(e.data);
+    for (const t of tabs.values()) {
+      const s = sessions.find(x => x.project === t.project && x.id === t.id);
+      if (s) { t.view.querySelector('.vp').textContent = shortPath(s.cwd); if (!t.title) setHeadTitle(t, sessName(s)); }
+      updateHeadButton(t);
+    }
+    renderList(); renderTabs();
+  });
+  es.addEventListener('history', e => {
+    const { key, events, skipped, title } = JSON.parse(e.data);
+    const t = tabs.get(key); if (!t) return;
+    if (title) renderEvent(t, { k: 'title', text: title });
+    t.conv.innerHTML = skipped ? `<div class="skipped">${T('skipped', skipped)}</div>` : '';
+    t.loaded = true;
+    if (!events.length) t.conv.innerHTML += `<div class="loading">${T('empty')}</div>`;
+    addEvents(t, events, false);
+  });
+  es.addEventListener('append', e => {
+    const { key, events } = JSON.parse(e.data);
+    const t = tabs.get(key); if (t && t.loaded) addEvents(t, events, true);
+  });
+}
+
+// restore tabs from the last visit
+const saved = store.get('tabs', { open: [], current: null });
+connect();
+for (const key of saved.open || []) { const [p, id] = key.split('/'); if (p && id) openTab(p, id, false); }
+if (saved.current && tabs.has(saved.current)) show(saved.current); else if (tabs.size) show([...tabs.keys()].pop());
+setInterval(renderList, 60000); // refresh the "x min ago" labels
+</script>
+</body>
+</html>

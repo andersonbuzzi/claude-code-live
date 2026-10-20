@@ -1,0 +1,15 @@
+{
+  "name": "claude-code-live",
+  "version": "0.1.0",
+  "description": "Watch your Claude Code sessions live in the browser, and jump to (or resume) them in Terminal.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Anderson Buzzi",
+  "repository": { "type": "git", "url": "git+https://github.com/andersonbuzzi/claude-code-live.git" },
+  "keywords": ["claude", "claude-code", "sessions", "viewer", "live", "sse", "macos"],
+  "scripts": {
+    "start": "node server.mjs",
+    "demo": "node scripts/demo.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
